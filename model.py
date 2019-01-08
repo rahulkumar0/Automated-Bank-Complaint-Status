@@ -147,7 +147,7 @@ def multiclass_logloss(actual, predicted, eps=1e-15):
 
 #Evaluating model
 print(validation(classifier))
-print(multiclass_logloss(classifier))
+print(multiclass_logloss(y_test,classifier.predict(X_test)))
 
 
 #Applying xgboost
@@ -170,7 +170,7 @@ plt.title('XGBoost Log Loss')
 plt.show()
 #Evaluating model
 print(validation(model))
-print(multiclass_logloss(model))
+print(multiclass_logloss(y_test,model.predict(X_test)))
 
 #Parameter tuning for xgboost model
 # Applying Grid Search to find the best model and the best parameters
