@@ -87,6 +87,9 @@ thresholds = np.sort(model.feature_importances_)
 selection = SelectFromModel(model, threshold=0.0005, prefit=True)
 select_X_train = selection.transform(X)
 select_X_test = selection.transform(Xtest)
+#creating validation dataset
+from sklearn.model_selection import train_test_split
+X_test, X_val, y_test, y_val = train_test_split(select_X_test, y_test, test_size = 0.1, random_state = 0)
 
 # Importing the Keras libraries and packages
 import keras
@@ -109,10 +112,10 @@ classifier.add(Dropout(0.2))
 classifier.add(Dense(output_dim = 5, init = 'uniform', activation = 'softmax'))
 
 # Compiling the ANN
-classifier.compile(optimizer = 'adam', loss = 'categorical_crossentropy',validation_split=0.1,metrics = ['accuracy'])
+classifier.compile(optimizer = 'adam', loss = 'categorical_crossentropy',metrics = ['accuracy'])
 
 # Fitting the ANN to the Training set
-history = classifier.fit(select_X_train, y, batch_size = 40,nb_epoch = 30)
+history = classifier.fit(select_X_train, y, batch_size = 40,validation_data=(X_val,y_val),nb_epoch = 30)
 
 # Plot training & validation accuracy values
 plt.plot(history.history['acc'])
@@ -133,7 +136,7 @@ plt.show()
 
 #validation functions
 def validation(model):
-    yprob = model.predict( select_X_test )
+    yprob = model.predict( X_test )
     return np.sum( yprob != y_test) / float(y_test.shape[0])
 
 def multiclass_logloss(actual, predicted, eps=1e-15):
@@ -151,8 +154,8 @@ print(multiclass_logloss(classifier))
 model = XGBClassifier(n_estimators=100,learning_rate=0.2,max_depth=7,objective = 'multi:softmax',
                        num_class=5,n_jobs=-1)
 #training
-eval_set = [(select_X_test, y_test)]
-model.fit(select_X_train, y,eval_set=eval_set,eval_metric='mlogloss',verbose = 1)
+eval_set = [(X_val, y_val)]
+model.fit(select_X_train, y,eval_set=eval_set,eval_metric='mlogloss',early_stopping_rounds=10,verbose = 1)
 
 # retrieve performance metrics
 results = model.evals_result()
@@ -166,8 +169,8 @@ plt.ylabel('Log Loss')
 plt.title('XGBoost Log Loss')
 plt.show()
 #Evaluating model
-print(validation(classifier))
-print(multiclass_logloss(classifier))
+print(validation(model))
+print(multiclass_logloss(model))
 
 #Parameter tuning for xgboost model
 # Applying Grid Search to find the best model and the best parameters
