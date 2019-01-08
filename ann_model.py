@@ -7,17 +7,20 @@ from sklearn.preprocessing import LabelEncoder
 
 train = pd.read_csv('train.csv')
 test = pd.read_csv('test.csv')
+y_test = pd.reaf_csv('y_test.csv')
 y = train['Complaint-Status']
 train = train.drop(['Complaint-Status'],axis =1)
 total = pd.concat([train,test],ignore_index = True)
-summary = total['Consumer-complaint-summary']
-total = total.drop(['Company-response','Consumer-disputes','Complaint-ID','Consumer-complaint-summary'],axis=1)
+summary = total['Consumer-complaint-summary'] #For nlp processing
+total = total.drop(['Complaint-ID','Consumer-complaint-summary'],axis=1)
+
 
 #check null values
 total1 = total.isnull().sum().sort_values(ascending=False)
 percent = (total.isnull().sum()/total.isnull().count()).sort_values(ascending=False)
 missing_data = pd.concat([total1, percent], axis=1, keys=['Total', 'Percent'])
 missing_data.head(20)
+total = total.drop(['Company-response','Consumer-disputes'],axis=1) #since there are 16% and 21% missing values of both features.
 
 #processing date datatype
 date_format = "%m/%d/%Y"
@@ -40,16 +43,17 @@ total = total.drop(['Transaction-Type_Bank account or service'],axis = 1)
 y= y.astype('category')
 labelencoder_X = LabelEncoder()
 y= labelencoder_X.fit_transform(y)
-y = pd.get_dummies(y)
-"""
+labelencoder_y = LabelEncoder()
+y_test= labelencoder_y.fit_transform(y_test)
+y = pd.get_dummies(y) #for ann model
+
 # Cleaning the texts
 import re
 import nltk
-#nltk.download('stopwords')
 from nltk.corpus import stopwords
 from nltk.stem.porter import PorterStemmer
 corpus = []
-for i in range(0, 61809):
+for i in range(0, len(total)):
     review = re.sub('[^a-zA-Z]', ' ', summary[i])
     review = review.lower()
     review = review.split()
@@ -60,27 +64,16 @@ for i in range(0, 61809):
     review = ' '.join(review)
     corpus.append(review)
     
-    
-#saving list
-import pickle
-with open("corpus.txt", "wb") as fp:
-    pickle.dump(corpus, fp)
-"""
-#load list
-import pickle
-with open("corpus.txt", "rb") as fp:
-    corpus = pickle.load(fp)
-    
 # Creating the Bag of Words model
 from sklearn.feature_extraction.text import CountVectorizer
 cv = CountVectorizer(max_features = 5000)
 summary = cv.fit_transform(corpus).toarray()
 total = np.concatenate((total.values,summary),axis = 1)
 #divide train test
-X = total[0:43266,:]
-Xtest = total[43266:,:]
+X = total[0:len(train),:]
+Xtest = total[len(train):,:]
 
-#applying xgboost
+#selecting important features using xgboost
 from xgboost import XGBClassifier
 from xgboost import plot_importance
 from sklearn.feature_selection import SelectFromModel
@@ -91,7 +84,7 @@ plot_importance(model)
 plt.show()
 thresholds = np.sort(model.feature_importances_)
 # select features using threshold
-selection = SelectFromModel(model, threshold=0.0004, prefit=True)
+selection = SelectFromModel(model, threshold=0.0005, prefit=True)
 select_X_train = selection.transform(X)
 select_X_test = selection.transform(Xtest)
 
@@ -101,63 +94,25 @@ from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import Dropout
 
-# Initialising the ANN
+# ANN Model
 classifier = Sequential()
 
 # Adding the input layer and the first hidden layer
-classifier.add(Dense(output_dim = 800, init = 'uniform', activation = 'relu', input_dim = 1597))
-classifier.add(Dropout(0.1))
+classifier.add(Dense(output_dim = 255, init = 'uniform', activation = 'relu', input_dim = 531))
+classifier.add(Dropout(0.2))
 
 #adding second hideen layer
 classifier.add(Dense(output_dim = 255, init = 'uniform', activation = 'relu'))
-classifier.add(Dropout(0.1))
+classifier.add(Dropout(0.2))
 
 # Adding the output layer
 classifier.add(Dense(output_dim = 5, init = 'uniform', activation = 'softmax'))
 
 # Compiling the ANN
-classifier.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['accuracy'])
+classifier.compile(optimizer = 'adam', loss = 'categorical_crossentropy',validation_split=0.1,metrics = ['accuracy'])
 
 # Fitting the ANN to the Training set
-history = classifier.fit(select_X_train, y, batch_size = 40,nb_epoch = 10)
-
-
-
-# train model
-selection_model = XGBClassifier(n_estimators=100,learning_rate=0.2,max_depth=7,objective = 'multi:softmax',
-                       num_class=5,n_jobs=-1)
-selection_model.fit(select_X_train, y)
-# eval model
-
-y_pred = selection_model.predict(select_X_test)
-
-y_pred = model.predict(X_test)
-print(np.sum( y_pred != y_test) / float(y_test.shape[0]))
-
-#applying  xg
-model1 = XGBClassifier(n_estimators=80,learning_rate=0.3,max_depth=7,objective = 'multi:softmax',
-                       num_class=5,n_jobs=-1)
-model1.fit(select_X_train,y)
-y_pred = model1.predict(select_X_test)
-
-y_pred = labelencoder_X.inverse_transform(y_pred)
-y_pred = y_pred.astype(str)
-
-y_pred = pd.Series(y_pred,name="Complaint-Status")
-submission = pd.concat([test['Complaint-ID'],y_pred],axis=1)
-submission.to_csv("submission45.csv",index=False)
-
-#applying  ann
-
-y_pred = classifier.predict(select_X_test)
-y_pred = np.argmax(y_pred,axis = 1)
-
-y_pred = labelencoder_X.inverse_transform(y_pred)
-y_pred = y_pred.astype(str)
-
-y_pred = pd.Series(y_pred,name="Complaint-Status")
-submission = pd.concat([test['Complaint-ID'],y_pred],axis=1)
-submission.to_csv("submission38.csv",index=False)
+history = classifier.fit(select_X_train, y, batch_size = 40,nb_epoch = 30)
 
 # Plot training & validation accuracy values
 plt.plot(history.history['acc'])
@@ -167,7 +122,6 @@ plt.ylabel('Accuracy')
 plt.xlabel('Epoch')
 plt.legend(['Train', 'Test'], loc='upper left')
 plt.show()
-
 # Plot training & validation loss values
 plt.plot(history.history['loss'])
 plt.plot(history.history['val_loss'])
@@ -176,3 +130,55 @@ plt.ylabel('Loss')
 plt.xlabel('Epoch')
 plt.legend(['Train', 'Test'], loc='upper left')
 plt.show()
+
+#validation functions
+def validation(model):
+    yprob = model.predict( select_X_test )
+    return np.sum( yprob != y_test) / float(y_test.shape[0])
+
+def multiclass_logloss(actual, predicted, eps=1e-15):
+    clip = np.clip(predicted, eps, 1 - eps)
+    rows = actual.shape[0]
+    vsota = np.sum(actual * np.log(clip))
+    return -1.0 / rows * vsota
+
+#Evaluating model
+print(validation(classifier))
+print(multiclass_logloss(classifier))
+
+
+#Applying xgboost
+model = XGBClassifier(n_estimators=100,learning_rate=0.2,max_depth=7,objective = 'multi:softmax',
+                       num_class=5,n_jobs=-1)
+#training
+eval_set = [(select_X_test, y_test)]
+model.fit(select_X_train, y,eval_set=eval_set,eval_metric='mlogloss',verbose = 1)
+
+# retrieve performance metrics
+results = model.evals_result()
+epochs = len(results['validation_0']['mlogloss'])
+x_axis = range(0, epochs)
+# plot log loss
+fig, ax = plt.subplots()
+ax.plot(x_axis, results['validation_0']['mlogloss'], label='Test')
+ax.legend()
+plt.ylabel('Log Loss')
+plt.title('XGBoost Log Loss')
+plt.show()
+#Evaluating model
+print(validation(classifier))
+print(multiclass_logloss(classifier))
+
+#Parameter tuning for xgboost model
+# Applying Grid Search to find the best model and the best parameters
+from sklearn.model_selection import GridSearchCV
+parameters = [{'max_depth': [4, 5, 6], 'learning_rate': [0.1,0.2,0.3],'min_child_weight':[1,2,3,4,5]}]
+              
+grid_search = GridSearchCV(estimator = model,
+                           param_grid = parameters,
+                           scoring = 'accuracy',
+                           cv = 10,
+                           n_jobs = -1)
+grid_search = grid_search.fit(selection_X_train, y)
+best_accuracy = grid_search.best_score_
+best_parameters = grid_search.best_params_
