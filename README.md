@@ -20,3 +20,6 @@ Complaint-Status -> Status of the complaint (Target Variable)
 
 Consumer-disputes -> If the consumer raised any disputes
 
+
+
+The f1 score for ann and xgboost model are 0.738 and 0.741 respectively.
